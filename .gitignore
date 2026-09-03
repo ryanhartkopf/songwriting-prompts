@@ -221,3 +221,6 @@ __marimo__/
 infra/.terraform/
 infra/terraform-state.tf
 infra/terraform.tfstate*
+
+# SQLite files
+*.db
