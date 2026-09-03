@@ -224,3 +224,6 @@ infra/terraform.tfstate*
 
 # SQLite files
 *.db
+
+# Prompts file
+prompts.json

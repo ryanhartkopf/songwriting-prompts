@@ -1,6 +1,8 @@
 import json
 import logging
+import os
 from datetime import time
+from dotenv import load_dotenv
 from zoneinfo import ZoneInfo
 from telegram import Update
 from telegram.ext import (
@@ -18,6 +20,7 @@ from classes import (
     User
 )
 
+load_dotenv()
 
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -159,8 +162,10 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 def main():
+    token = os.getenv("TELEGRAM_TOKEN")
+
     # Initialize Telegram app
-    app = Application.builder().token("8892169399:AAHPdYWv8hkiJjFdQe07wsYEtYSWOrookLc").build()
+    app = Application.builder().token(token).build()
 
     # Initialize the database and create tables if they don't exist
     db.connect()
