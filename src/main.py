@@ -1,8 +1,10 @@
 import json
 import logging
 import os
+import smtplib
 from datetime import time
 from dotenv import load_dotenv
+from email.message import EmailMessage
 from zoneinfo import ZoneInfo
 from telegram import Update
 from telegram.ext import (
@@ -44,16 +46,56 @@ async def help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     )
 
 
+async def list(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    # Get the last 5 user responses from the database
+    user_id = update.effective_user.id
+    entries = Entry.select().where(Entry.user == user_id).order_by(Entry.id.desc()).limit(5)
+    responses = []
+    for entry in entries:
+        prompt = Prompt.get_by_id(entry.prompt_id)
+        responses.append(f"Prompt: {prompt.text}\nResponse: {entry.response}\n")
+    await update.message.reply_text(
+        "Here are your last 5 responses:\n\n" + "\n".join(responses) if responses else "You have no responses yet."
+    )
+
+
+async def email(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    # Get all user responses from the database
+    user_id = update.effective_user.id
+    entries = Entry.select().where(Entry.user == user_id).order_by(Entry.id.desc())
+    responses = []
+    for entry in entries:
+        prompt = Prompt.get_by_id(entry.prompt_id)
+        responses.append(f"Prompt: {prompt.text}\nResponse: {entry.response}\n")
+
+    # Create email content
+    msg = EmailMessage()
+    msg["From"] = os.getenv("FROM_EMAIL")
+    msg["To"] = os.getenv("TO_EMAIL")
+    msg["Subject"] = "Your Songwriting Responses"
+    msg.set_content("\n".join(responses) if responses else "You have no responses yet.")
+
+    try:
+        with smtplib.SMTP(os.getenv("SMTP_SERVER"), int(os.getenv("SMTP_PORT"))) as smtp:
+            smtp.starttls()  # Upgrade the connection to secure encrypted TLS
+            smtp.login(os.getenv("SMTP_USERNAME"), os.getenv("SMTP_PASSWORD"))  # Use the app password from environment variable
+            smtp.send_message(msg)
+            print("Email sent successfully!")
+    except Exception as e:
+        print(f"Failed to send email: {e}")
+
+
 async def daily_prompt(context: ContextTypes.DEFAULT_TYPE):
     # Retrieve the chat_id passed via the 'data' parameter when the job was scheduled
     chat_id = context.job.data
     user_id = context.job.user_id
 
-    # Get a random prompt from the database
-    prompt = Prompt.select().order_by(db.random()).get()
-
-    user = User.get(User.id == user_id)
-
+    # Get a random prompt from the database that the user has not responded to yet
+    # If all prompts have been responded to, just pick a random prompt
+    user_responses = Entry.select(Entry.prompt_id).where(Entry.user == user_id)
+    prompt = Prompt.select().where(Prompt.id.not_in(user_responses)).order_by(db.random()).first()
+    if not prompt:
+        prompt = Prompt.select().order_by(db.random()).first()
 
     # Mark this user as "awaiting a response" — no ConversationHandler needed
     context.application.bot_data.setdefault('awaiting_response', {})[user_id] = prompt.id
@@ -162,25 +204,22 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 def main():
-    token = os.getenv("TELEGRAM_TOKEN")
-
     # Initialize Telegram app
+    token = os.getenv("TELEGRAM_TOKEN")
     app = Application.builder().token(token).build()
 
     # Initialize the database and create tables if they don't exist
     db.connect()
-    #db.drop_tables([User, Prompt, Entry])
     db.create_tables([User, Prompt, Entry], safe=True)
 
     # Load prompts from prompts.json (list) and save them to the database if they don't already exist
     with open('prompts.json', 'r') as f:
         prompts = json.load(f)
-        print(prompts)
         for prompt in prompts:
-            print(prompt)
             if not Prompt.select().where(Prompt.text == prompt).exists():
                 Prompt.create(text=prompt, reviewed=True)
 
+    # Conversation handler for the /start command
     start_handler = ConversationHandler(
         entry_points=[CommandHandler("start", start)],
         states={
@@ -191,6 +230,7 @@ def main():
         fallbacks=[CommandHandler("cancel", cancel)],
     )
 
+    # Schedule daily prompts for all users in the database
     users = User.select()
     for user in users:
         hour, minute = map(int, user.message_time.split(':'))
@@ -204,13 +244,17 @@ def main():
             name=f"daily_job_{user.chat_id}"  # Giving the job a name makes it manageable later
         )
 
+    # Add conversation, message, and command handlers to the application
     app.add_handlers([
         start_handler,
         MessageHandler(filters.TEXT & ~filters.COMMAND, handle_response),
         CommandHandler("hello", hello),
         CommandHandler("help", help),
+        CommandHandler("list", list),
+        CommandHandler("email", email),
     ])
 
+    # Start the bot
     app.run_polling()
 
 
