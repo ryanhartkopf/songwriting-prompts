@@ -1,7 +1,8 @@
 """Simple command handlers: /help, /list, /cancel."""
+from conftest import reply_text
+
 import main
 from classes import Entry
-from conftest import reply_text
 
 
 async def test_help_lists_commands(make_update, context):

@@ -1,11 +1,10 @@
 """daily_prompt (scheduled job) and handle_response (user reply)."""
 from types import SimpleNamespace
 
-import pytest
+from conftest import reply_text
 
 import main
-from classes import Entry, Prompt
-from conftest import reply_text
+from classes import Entry
 
 
 def job_context(context, user_id=1, chat_id=1):

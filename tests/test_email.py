@@ -1,12 +1,12 @@
 """The /email command."""
 import smtplib
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
+from conftest import reply_text
 
 import main
 from classes import Entry
-from conftest import reply_text
 
 
 @pytest.fixture(autouse=True)
@@ -72,8 +72,6 @@ async def test_sender_refused_reports_failure(make_update, context, make_user, s
     assert update.message.reply_text.await_count == 1
 
 
-@pytest.mark.xfail(reason="Only SMTPSenderRefused is handled; auth/connection errors propagate",
-                   raises=smtplib.SMTPAuthenticationError, strict=True)
 async def test_auth_failure_is_handled(make_update, context, make_user, smtp):
     make_user(user_id="1", chat_id="1")
     smtp[1].login.side_effect = smtplib.SMTPAuthenticationError(535, b"bad creds")

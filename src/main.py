@@ -148,6 +148,14 @@ async def get_timezone(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def get_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
     preferred_time = update.message.text
     context.user_data['preferred_time'] = preferred_time
+    try:
+        hour, minute = map(int, preferred_time.split(':'))
+    except ValueError:
+        await update.message.reply_text("Invalid time format. Please enter the time in HH:MM format (24-hour clock).")
+        return TIME
+    if not (0 <= hour < 24 and 0 <= minute < 60):
+        await update.message.reply_text("Invalid time format. Please enter the time in HH:MM format (24-hour clock).")
+        return TIME
     
     # Save the user's time zone and preferred time to the database
     if User.select().where(User.chat_id == str(update.effective_chat.id)).exists():
@@ -229,6 +237,10 @@ async def email(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             await update.message.reply_text("Your responses have been emailed successfully!")
     except smtplib.SMTPSenderRefused as e:
         logger.error(f"SMTP server refused: {e}")
+        await update.message.reply_text("Failed to send email. Please try again later.")
+        return
+    except smtplib.SMTPAuthenticationError as e:
+        logger.error(f"SMTP authentication error: {e}")
         await update.message.reply_text("Failed to send email. Please try again later.")
         return
 

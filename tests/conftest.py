@@ -1,11 +1,9 @@
 """Shared fixtures: an in-memory database plus fake Telegram objects."""
-from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from peewee import SqliteDatabase
 
-import classes
 from classes import Entry, Prompt, User
 
 MODELS = [User, Prompt, Entry]

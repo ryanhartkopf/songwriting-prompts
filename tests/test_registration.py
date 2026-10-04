@@ -2,11 +2,11 @@
 from unittest.mock import MagicMock
 
 import pytest
+from conftest import reply_text
 from telegram.ext import ConversationHandler
 
 import main
 from classes import User
-from conftest import reply_text
 
 
 async def test_start_asks_for_name(make_update, context):
@@ -114,9 +114,6 @@ async def test_get_time_integrity_error_ends_conversation(make_update, context, 
     context.application.job_queue.run_daily.assert_not_called()
 
 
-@pytest.mark.xfail(reason="get_time does not validate HH:MM; bad input raises ValueError "
-                          "after the user row has already been saved",
-                   raises=ValueError, strict=True)
 @pytest.mark.parametrize("bad", ["9am", "noon", "25:00", "12:60", ""])
 async def test_get_time_rejects_invalid_time(make_update, context, bad):
     update = make_update(bad)
