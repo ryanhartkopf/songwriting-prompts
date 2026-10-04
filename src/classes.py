@@ -1,5 +1,13 @@
 from datetime import datetime
-from peewee import *
+
+from peewee import (
+    BooleanField,
+    DateTimeField,
+    ForeignKeyField,
+    Model,
+    SqliteDatabase,
+    TextField,
+)
 
 db = SqliteDatabase('songwriting_prompts.db')
 
