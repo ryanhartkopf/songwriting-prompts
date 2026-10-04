@@ -1,20 +1,14 @@
-"""Simple command handlers: /hello, /help, /list, /cancel."""
+"""Simple command handlers: /help, /list, /cancel."""
 import main
 from classes import Entry
 from conftest import reply_text
-
-
-async def test_hello_greets_by_first_name(make_update, context):
-    update = make_update(first_name="Grace")
-    await main.hello(update, context)
-    update.message.reply_text.assert_awaited_once_with("Hello Grace")
 
 
 async def test_help_lists_commands(make_update, context):
     update = make_update()
     await main.help(update, context)
     text = reply_text(update)
-    for cmd in ("/hello", "/start", "/help"):
+    for cmd in ("/start", "/list", "/email", "/help"):
         assert cmd in text
 
 

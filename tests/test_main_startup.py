@@ -66,6 +66,6 @@ def test_registers_expected_handlers(app):
     main.main()
     handlers = app.add_handlers.call_args.args[0]
     commands = {c for h in handlers if isinstance(h, CommandHandler) for c in h.commands}
-    assert commands == {"hello", "help", "list", "email"}
+    assert commands == {"help", "list", "email"}
     assert any(isinstance(h, ConversationHandler) for h in handlers)
     assert any(isinstance(h, MessageHandler) for h in handlers)
