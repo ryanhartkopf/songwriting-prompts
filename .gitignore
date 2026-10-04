@@ -219,3 +219,6 @@ __marimo__/
 
 # SQLite files
 *.db
+
+# Mac files
+.DS_Store

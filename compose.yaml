@@ -1,6 +1,8 @@
 services:
   app:
     build: .
+    volumes:
+      - ./db:/app/db:rw
     environment:
       - TELEGRAM_TOKEN=${TELEGRAM_TOKEN}
       - SMTP_SERVER=${SMTP_SERVER:-smtp.gmail.com}

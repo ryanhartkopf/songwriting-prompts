@@ -9,7 +9,7 @@ from peewee import (
     TextField,
 )
 
-db = SqliteDatabase('songwriting_prompts.db')
+db = SqliteDatabase('db/sqlite.db')
 
 class BaseModel(Model):
     class Meta:

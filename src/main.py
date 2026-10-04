@@ -39,8 +39,9 @@ async def hello(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 async def help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(
         "Here's how to use this bot:\n\n"
-        "/hello - Greet the bot\n"
         "/start - Subscribe to daily songwriting prompts\n"
+        "/list - List your last 5 responses\n"
+        "/email - Email your responses to yourself\n"
         "/help - Show this help message\n"
     )
 
@@ -64,11 +65,18 @@ async def daily_prompt(context: ContextTypes.DEFAULT_TYPE):
     user_id = context.job.user_id
 
     # Get a random prompt from the database that the user has not responded to yet
-    # If all prompts have been responded to, just pick a random prompt
     user_responses = Entry.select(Entry.prompt_id).where(Entry.user == user_id)
     prompt = Prompt.select().where(Prompt.id.not_in(user_responses)).order_by(db.random()).first()
     if not prompt:
+        # If all prompts have been responded to, just pick a random prompt
         prompt = Prompt.select().order_by(db.random()).first()
+        if not prompt:
+            logger.warning(f"No prompts available for user {user_id}.")
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text="No prompts are available at the moment. Please try again later."
+            )
+            return
 
     # Mark this user as "awaiting a response" — no ConversationHandler needed
     context.application.bot_data.setdefault('awaiting_response', {})[user_id] = prompt.id
@@ -271,10 +279,9 @@ def main():
     app.add_handlers([
         start_handler,
         MessageHandler(filters.TEXT & ~filters.COMMAND, handle_response),
-        CommandHandler("hello", hello),
-        CommandHandler("help", help),
         CommandHandler("list", list),
         CommandHandler("email", email),
+        CommandHandler("help", help),
     ])
 
     # Start the bot
