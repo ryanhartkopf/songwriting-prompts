@@ -92,7 +92,7 @@ async def handle_response(update: Update, context: ContextTypes.DEFAULT_TYPE):
     awaiting = context.application.bot_data.get('awaiting_response', {})
 
     if user_id not in awaiting:
-        await update.message.reply_text("You don't have a prompt to respond to right now. Please wait for your daily prompt.")
+        await update.message.reply_text("You don't have a prompt to respond to right now. Please wait for your daily prompt or use /help for more options.")
         return
 
     prompt_id = awaiting.pop(user_id)

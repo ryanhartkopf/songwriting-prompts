@@ -12,7 +12,7 @@ services:
     develop:
       watch:
         - action: sync+restart
-          path: .
-          target: /app
+          path: src
+          target: /app/src
         - action: rebuild
           path: requirements.txt
