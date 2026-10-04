@@ -215,7 +215,7 @@ async def email(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     try:
         with smtplib.SMTP(os.getenv("SMTP_SERVER"), int(os.getenv("SMTP_PORT"))) as smtp:
             smtp.starttls()  # Upgrade the connection to secure encrypted TLS
-            #smtp.login(os.getenv("SMTP_USERNAME"), os.getenv("SMTP_PASSWORD"))  # Use the app password from environment variable
+            smtp.login(os.getenv("SMTP_USERNAME"), os.getenv("SMTP_PASSWORD"))  # Use the app password from environment variable
             smtp.send_message(msg)
             logger.info(f"Email sent to {user.email}")
             await update.message.reply_text("Your responses have been emailed successfully!")
