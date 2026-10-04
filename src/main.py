@@ -32,10 +32,6 @@ logger = logging.getLogger(__name__)
 NAME, EMAIL, TZ, TIME = range(4)
 
 
-async def hello(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await update.message.reply_text(f'Hello {update.effective_user.first_name}')
-
-
 async def help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(
         "Here's how to use this bot:\n\n"
