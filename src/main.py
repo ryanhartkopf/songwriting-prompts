@@ -29,8 +29,8 @@ logging.basicConfig(
     level=logging.INFO
 )
 
-# Initialize conversation states
-NAME, TZ, TIME = range(3)
+# Initialize /start conversation states
+NAME, EMAIL, TZ, TIME = range(4)
 
 
 async def hello(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -57,32 +57,6 @@ async def list(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(
         "Here are your last 5 responses:\n\n" + "\n".join(responses) if responses else "You have no responses yet."
     )
-
-
-async def email(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    # Get all user responses from the database
-    user_id = update.effective_user.id
-    entries = Entry.select().where(Entry.user == user_id).order_by(Entry.id.desc())
-    responses = []
-    for entry in entries:
-        prompt = Prompt.get_by_id(entry.prompt_id)
-        responses.append(f"Prompt: {prompt.text}\nResponse: {entry.response}\n")
-
-    # Create email content
-    msg = EmailMessage()
-    msg["From"] = os.getenv("FROM_EMAIL")
-    msg["To"] = os.getenv("TO_EMAIL")
-    msg["Subject"] = "Your Songwriting Responses"
-    msg.set_content("\n".join(responses) if responses else "You have no responses yet.")
-
-    try:
-        with smtplib.SMTP(os.getenv("SMTP_SERVER"), int(os.getenv("SMTP_PORT"))) as smtp:
-            smtp.starttls()  # Upgrade the connection to secure encrypted TLS
-            smtp.login(os.getenv("SMTP_USERNAME"), os.getenv("SMTP_PASSWORD"))  # Use the app password from environment variable
-            smtp.send_message(msg)
-            print("Email sent successfully!")
-    except Exception as e:
-        print(f"Failed to send email: {e}")
 
 
 async def daily_prompt(context: ContextTypes.DEFAULT_TYPE):
@@ -135,7 +109,13 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def get_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_name = update.message.text
     context.user_data['name'] = user_name
-    await update.message.reply_text(f"Nice to meet you, {user_name}! What is your preferred time zone?\n\n1. US Pacific\n2. US Mountain\n3. US Central\n4. US Eastern")
+    await update.message.reply_text(f"Nice to meet you, {user_name}! What is your email address?")
+    return EMAIL
+
+
+async def get_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data['email'] = update.message.text
+    await update.message.reply_text(f"What is your preferred time zone?\n\n1. US Pacific\n2. US Mountain\n3. US Central\n4. US Eastern")
     return TZ
 
 
@@ -170,28 +150,39 @@ async def get_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user.message_time = preferred_time
         user.save()
     else:
-        user = User.create(
-            id=str(update.effective_user.id),
-            chat_id=str(update.effective_chat.id),
-            name=context.user_data['name'],
-            time_zone=context.user_data['time_zone'],
-            message_time=preferred_time
-        )
+        try:
+            user = User.create(
+                id=str(update.effective_user.id),
+                chat_id=str(update.effective_chat.id),
+                name=context.user_data['name'],
+                email=context.user_data['email'],
+                time_zone=context.user_data['time_zone'],
+                message_time=preferred_time
+            )
+        except Exception as e:
+            logging.error(f"Error creating user: {e}")
+            await update.message.reply_text("There was an error saving your information. Please try again.")
+            return ConversationHandler.END
 
     hour, minute = map(int, preferred_time.split(':'))
-    # If a job already exists for this user, remove it before scheduling a new one
-    existing_job = context.application.job_queue.get_jobs_by_name(f"daily_job_{update.effective_chat.id}")
-    if existing_job:
-        existing_job[0].schedule_removal()
-    context.application.job_queue.run_daily(
-        callback=daily_prompt,
-        time=time(hour=hour, minute=minute, second=0, tzinfo=ZoneInfo(context.user_data['time_zone'])),
-        days=(0, 1, 2, 3, 4, 5, 6),  # 0=Monday, 6=Sunday. Runs every day.
-        user_id=update.effective_user.id,  # Pass the user ID to the job context
-        chat_id=update.effective_chat.id,  # Pass the chat ID to the job context
-        data=update.effective_chat.id,  # Custom data passed into the job context
-        name=f"daily_job_{update.effective_chat.id}"  # Giving the job a name makes it manageable later
-    )
+    try:
+        # If a job already exists for this user, remove it before scheduling a new one
+        existing_job = context.application.job_queue.get_jobs_by_name(f"daily_job_{update.effective_chat.id}")
+        if existing_job:
+            existing_job[0].schedule_removal()
+        context.application.job_queue.run_daily(
+            callback=daily_prompt,
+            time=time(hour=hour, minute=minute, second=0, tzinfo=ZoneInfo(context.user_data['time_zone'])),
+            days=(0, 1, 2, 3, 4, 5, 6),  # 0=Monday, 6=Sunday. Runs every day.
+            user_id=update.effective_user.id,  # Pass the user ID to the job context
+            chat_id=update.effective_chat.id,  # Pass the chat ID to the job context
+            data=update.effective_chat.id,  # Custom data passed into the job context
+            name=f"daily_job_{update.effective_chat.id}"  # Giving the job a name makes it manageable later
+        )
+    except Exception as e:
+        logging.error(f"Error scheduling daily prompt: {e}")
+        await update.message.reply_text("There was an error scheduling your daily prompt. Please try again.")
+        return ConversationHandler.END
     
     await update.message.reply_text(f"Thank you! You will receive your daily songwriting prompt at {preferred_time} in your selected time zone.")
     
@@ -201,6 +192,36 @@ async def get_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Subscription process canceled. You can start again anytime by sending /start.")
     return ConversationHandler.END
+
+
+async def email(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    # Get user information and responses from the database
+    user_id = update.effective_user.id
+    user = User.get(User.chat_id == str(update.effective_chat.id))
+    entries = Entry.select().where(Entry.user == user_id).order_by(Entry.id.desc())
+    responses = []
+    for entry in entries:
+        prompt = Prompt.get_by_id(entry.prompt_id)
+        responses.append(f"Prompt: {prompt.text}\nResponse: {entry.response}\n")
+
+    # Create email content
+    msg = EmailMessage()
+    msg["From"] = os.getenv("SMTP_USERNAME")
+    msg["To"] = user.email
+    msg["Subject"] = "Your Songwriting Responses"
+    msg.set_content("\n".join(responses) if responses else "You have no responses yet.")
+
+    try:
+        with smtplib.SMTP(os.getenv("SMTP_SERVER"), int(os.getenv("SMTP_PORT"))) as smtp:
+            smtp.starttls()  # Upgrade the connection to secure encrypted TLS
+            smtp.login(os.getenv("SMTP_USERNAME"), os.getenv("SMTP_PASSWORD"))  # Use the app password from environment variable
+            smtp.send_message(msg)
+            logging.info(f"Email sent to {user.email}")
+            await update.message.reply_text("Your responses have been emailed successfully!")
+    except Exception as e:
+        logging.error(f"Failed to send email: {e}")
+        await update.message.reply_text("Failed to send email. Please try again later.")
+        return
 
 
 def main():
@@ -224,6 +245,7 @@ def main():
         entry_points=[CommandHandler("start", start)],
         states={
             NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_name)],
+            EMAIL: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_email)],
             TZ: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_timezone)],
             TIME: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_time)],
         },

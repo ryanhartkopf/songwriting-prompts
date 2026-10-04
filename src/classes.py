@@ -12,6 +12,7 @@ class User(BaseModel):
     id = TextField(primary_key=True)
     chat_id = TextField(unique=True)
     name = TextField()
+    email = TextField()
     message_time = TextField()
     time_zone = TextField()
 
