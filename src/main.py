@@ -294,6 +294,7 @@ def main():
         CommandHandler("list", list),
         CommandHandler("email", email),
         CommandHandler("help", help),
+        MessageHandler(filters.COMMAND, help),
     ])
 
     # Start the bot

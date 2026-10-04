@@ -2,3 +2,6 @@ Dockerfile
 LICENSE
 README.md
 *.db
+pytest.ini
+tests
+compose.yaml
