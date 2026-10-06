@@ -1,7 +1,8 @@
-from datetime import datetime
+from datetime import date, datetime
 
 from peewee import (
     BooleanField,
+    DateField,
     DateTimeField,
     ForeignKeyField,
     Model,
@@ -40,6 +41,6 @@ class Entry(BaseModel):
     response = TextField()
 
 
-class UserState(BaseModel):
-    user = ForeignKeyField(User, backref='state', unique=True)
-    pending_prompt_id = ForeignKeyField(Prompt, backref='pending_state', null=True)
+class DailyPrompt(BaseModel):
+    date = DateField(default=date.today, index=True)
+    prompt_id = ForeignKeyField(Prompt, backref='daily_prompts')

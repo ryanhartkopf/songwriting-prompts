@@ -2,7 +2,7 @@ import json
 import logging
 import os
 import smtplib
-from datetime import time
+from datetime import date, time
 from email.message import EmailMessage
 from zoneinfo import ZoneInfo
 
@@ -18,7 +18,7 @@ from telegram.ext import (
     filters,
 )
 
-from classes import Entry, Prompt, User, db
+from classes import DailyPrompt, Entry, Prompt, User, db
 
 load_dotenv()
 
@@ -60,19 +60,29 @@ async def daily_prompt(context: ContextTypes.DEFAULT_TYPE):
     chat_id = context.job.data
     user_id = context.job.user_id
 
-    # Get a random prompt from the database that the user has not responded to yet
-    user_responses = Entry.select(Entry.prompt_id).where(Entry.user == user_id)
-    prompt = Prompt.select().where(Prompt.id.not_in(user_responses)).order_by(db.random()).first()
+    # Check for DailyPrompt with matching DailyPrompt.date and get the corresponding prompt_id
+    prompt_id = DailyPrompt.select().where(DailyPrompt.date == date.today()).first()
+    prompt = Prompt.get_by_id(prompt_id.prompt_id) if prompt_id else None
+
+    # If no DailyPrompt, get a random prompt from the database that the user has not responded to yet
     if not prompt:
-        # If all prompts have been responded to, just pick a random prompt
+        user_responses = Entry.select(Entry.prompt_id).where(Entry.user == user_id)
+        prompt = Prompt.select().where(Prompt.id.not_in(user_responses)).order_by(db.random()).first()
+        DailyPrompt.create(date=date.today(), prompt_id=prompt.id) if prompt else None
+
+    # If all prompts have been responded to, just pick a random prompt
+    if not prompt:
         prompt = Prompt.select().order_by(db.random()).first()
-        if not prompt:
-            logger.warning(f"No prompts available for user {user_id}.")
-            await context.bot.send_message(
-                chat_id=chat_id,
-                text="No prompts are available at the moment. Please try again later."
-            )
-            return
+        DailyPrompt.create(date=date.today(), prompt_id=prompt.id) if prompt else None
+
+    # If still no prompt, just give up
+    if not prompt:
+        logger.warning(f"No prompts available for user {user_id}.")
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text="No prompts are available at the moment. Please try again later."
+        )
+        return
 
     # Mark this user as "awaiting a response" — no ConversationHandler needed
     context.application.bot_data.setdefault('awaiting_response', {})[user_id] = prompt.id
@@ -248,7 +258,7 @@ def main():
 
     # Initialize the database and create tables if they don't exist
     db.connect()
-    db.create_tables([User, Prompt, Entry], safe=True)
+    db.create_tables([User, Prompt, Entry, DailyPrompt], safe=True)
 
     # Load prompts from prompts.json (list) and save them to the database if they don't already exist
     with open('prompts.json', 'r') as f:
