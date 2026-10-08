@@ -58,3 +58,36 @@ async def test_list_excludes_other_users(make_update, context, make_user, make_p
     await main.list(update, context)
     text = reply_text(update)
     assert "mine" in text and "theirs" not in text
+
+
+async def test_prompt_marks_user_as_awaiting(make_update, context, make_user, make_prompt):
+    user, prompt = make_user(user_id="1"), make_prompt("Write about rain.")
+    update = make_update(user_id=1)
+    await main.prompt(update, context)
+    text = reply_text(update)
+    assert "Write about rain." in text
+
+
+async def test_prompt_marks_user_as_awaiting(make_update, context, make_user, make_prompt):
+    user, prompt = make_user(user_id="1"), make_prompt("Write about rain.")
+    update = make_update(user_id=1)
+    await main.prompt(update, context)
+    assert context.application.bot_data["awaiting_response"][1] == prompt.id
+
+
+async def test_prompt_prefers_prompts_user_has_not_answered(make_update, context, make_user, make_prompt):
+    user = make_user(user_id="1")
+    answered, fresh = make_prompt("answered"), make_prompt("fresh")
+    Entry.create(user=user, prompt_id=answered, response="done")
+    update = make_update(user_id=1)
+    for _ in range(20):  # random selection, so repeat
+        await main.prompt(update, context)
+        assert context.application.bot_data["awaiting_response"][1] == fresh.id
+
+
+async def test_prompt_handles_empty_prompt_table(make_update, context, make_user):
+    make_user(user_id="1")
+    update = make_update(user_id=1)
+    await main.prompt(update, context)
+    text = reply_text(update)
+    assert "try again later." in text

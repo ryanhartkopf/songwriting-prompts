@@ -36,10 +36,34 @@ async def help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(
         "Here's how to use this bot:\n\n"
         "/start - Subscribe to daily songwriting prompts\n"
+        "/prompt - Get a new songwriting prompt right now\n"
         "/list - List your last 5 responses\n"
         "/email - Email your responses to yourself\n"
         "/help - Show this help message\n"
     )
+
+
+async def prompt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_id = update.effective_user.id
+
+    # Get a random prompt from the database that the user has not responded to yet
+    # or if all prompts have been responded to, just pick a random prompt
+    user_responses = Entry.select(Entry.prompt_id).where(Entry.user == user_id)
+    prompt = (
+        Prompt.select().where(Prompt.id.not_in(user_responses)).order_by(db.random()).first()
+        or Prompt.select().order_by(db.random()).first()
+    )
+
+    # If still no prompt, just give up
+    if not prompt:
+        logger.warning(f"No prompts available for user {user_id}.")
+        await update.message.reply_text("No prompts are available at the moment. Please try again later.")
+        return
+
+    # Mark this user as "awaiting a response" — no ConversationHandler needed
+    context.application.bot_data.setdefault('awaiting_response', {})[user_id] = prompt.id
+
+    await update.message.reply_text(f"Here's your songwriting prompt:\n\n{prompt.text}")
 
 
 async def list(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -262,10 +286,10 @@ def main():
 
     # Load prompts from prompts.json (list) and save them to the database if they don't already exist
     with open('prompts.json', 'r') as f:
-        prompts = json.load(f)
-        for prompt in prompts:
-            if not Prompt.select().where(Prompt.text == prompt).exists():
-                Prompt.create(text=prompt, reviewed=True)
+        file_prompts = json.load(f)
+        for p in file_prompts:
+            if not Prompt.select().where(Prompt.text == p).exists():
+                Prompt.create(text=p, reviewed=True)
 
     # Conversation handler for the /start command
     start_handler = ConversationHandler(
@@ -297,6 +321,7 @@ def main():
     app.add_handlers([
         start_handler,
         MessageHandler(filters.TEXT & ~filters.COMMAND, handle_response),
+        CommandHandler("prompt", prompt),
         CommandHandler("list", list),
         CommandHandler("email", email),
         CommandHandler("help", help),

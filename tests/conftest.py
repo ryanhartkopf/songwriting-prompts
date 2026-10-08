@@ -4,9 +4,9 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from peewee import SqliteDatabase
 
-from classes import Entry, Prompt, User
+from classes import DailyPrompt, Entry, Prompt, User
 
-MODELS = [User, Prompt, Entry]
+MODELS = [User, Prompt, Entry, DailyPrompt]
 
 
 @pytest.fixture(autouse=True)
