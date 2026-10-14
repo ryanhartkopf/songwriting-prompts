@@ -4,9 +4,9 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from peewee import SqliteDatabase
 
-from classes import DailyPrompt, Entry, Prompt, User
+from classes import DailyPrompt, Entry, Prompt, User, UserCurrentPrompt
 
-MODELS = [User, Prompt, Entry, DailyPrompt]
+MODELS = [User, Prompt, UserCurrentPrompt, Entry, DailyPrompt]
 
 
 @pytest.fixture(autouse=True)
@@ -33,6 +33,13 @@ def make_user():
 def make_prompt():
     def _make(text="Write a line about rain."):
         return Prompt.create(text=text, reviewed=True)
+    return _make
+
+
+@pytest.fixture
+def make_user_current_prompt():
+    def _make(user_id="1", prompt_id="1"):
+        return UserCurrentPrompt.create(user=user_id, prompt_id=prompt_id)
     return _make
 
 

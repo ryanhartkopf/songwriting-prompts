@@ -1,8 +1,9 @@
 import json
 import logging
 import os
+import random
 import smtplib
-from datetime import date, time
+from datetime import datetime, time
 from email.message import EmailMessage
 from zoneinfo import ZoneInfo
 
@@ -18,7 +19,7 @@ from telegram.ext import (
     filters,
 )
 
-from classes import DailyPrompt, Entry, Prompt, User, db
+from classes import DailyPrompt, Entry, Prompt, User, UserCurrentPrompt, db
 
 load_dotenv()
 
@@ -30,6 +31,12 @@ logger = logging.getLogger(__name__)
 
 # Initialize /start conversation states
 NAME, EMAIL, TZ, TIME = range(4)
+
+# Initialize /suggest conversation states
+SUGGESTION = range(4, 5)
+
+# Initialize /review conversation states
+REVIEW = range(5, 6)
 
 
 async def help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -45,14 +52,17 @@ async def help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 async def prompt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.effective_user.id
+    prompt = None
 
-    # Get a random prompt from the database that the user has not responded to yet
-    # or if all prompts have been responded to, just pick a random prompt
+    # If no DailyPrompt, get the most recent 5 prompts that the user has not responded to
     user_responses = Entry.select(Entry.prompt_id).where(Entry.user == user_id)
-    prompt = (
-        Prompt.select().where(Prompt.id.not_in(user_responses)).order_by(db.random()).first()
-        or Prompt.select().order_by(db.random()).first()
+    prompts = (
+        Prompt.select()
+        .where(Prompt.id.not_in(user_responses))
+        .order_by(Prompt.id.desc())
+        .limit(5)
     )
+    prompt = random.choice(prompts) if prompts else None
 
     # If still no prompt, just give up
     if not prompt:
@@ -60,10 +70,60 @@ async def prompt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await update.message.reply_text("No prompts are available at the moment. Please try again later.")
         return
 
-    # Mark this user as "awaiting a response" — no ConversationHandler needed
-    context.application.bot_data.setdefault('awaiting_response', {})[user_id] = prompt.id
+    # Set UserCurrentPrompt for this user
+    current_prompt = UserCurrentPrompt.get_or_none(UserCurrentPrompt.user == user_id)
+    if current_prompt:
+        current_prompt.prompt_id = prompt.id
+        current_prompt.save()
+    else:
+        UserCurrentPrompt.create(user=user_id, prompt_id=prompt.id)
 
     await update.message.reply_text(f"Here's your songwriting prompt:\n\n{prompt.text}")
+
+
+async def suggest(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Please enter your songwriting prompt suggestion:")
+    return SUGGESTION
+
+
+async def get_suggestion(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    suggestion_text = update.message.text
+    # Save the suggestion to the database with reviewed=False
+    Prompt.create(text=suggestion_text, reviewed=False)
+    await update.message.reply_text("Thank you for your suggestion! It will be reviewed by the admins.")
+    return ConversationHandler.END
+
+
+async def review(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    prompts_to_review = Prompt.select().where(Prompt.reviewed == False)
+    if not prompts_to_review.exists():
+        await update.message.reply_text("There are no prompts to review at the moment.")
+        return ConversationHandler.END
+
+    prompt = random.choice(prompts_to_review)
+    context.user_data['prompt_id'] = prompt.id
+
+    await update.message.reply_text(f"Please review the following prompt:\n\n{prompt.text}\n\nDo you approve this prompt? (yes/no)")
+    return REVIEW
+
+
+async def get_review(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_response = update.message.text.lower()
+    prompt_id = context.user_data.get('prompt_id')
+
+    if user_response == 'yes':
+        prompt = Prompt.get_by_id(prompt_id)
+        prompt.reviewed = True
+        prompt.save()
+        await update.message.reply_text("Thank you for approving the prompt!")
+    elif user_response == 'no':
+        Prompt.delete_by_id(prompt_id)
+        await update.message.reply_text("The prompt has been rejected and removed from the database.")
+    else:
+        await update.message.reply_text("Invalid response. Please reply with 'yes' or 'no'.")
+        return REVIEW
+
+    return ConversationHandler.END
 
 
 async def list(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -83,21 +143,29 @@ async def daily_prompt(context: ContextTypes.DEFAULT_TYPE):
     # Retrieve the chat_id passed via the 'data' parameter when the job was scheduled
     chat_id = context.job.data
     user_id = context.job.user_id
+    time_zone = User.get(User.id == user_id).time_zone
+    today = datetime.now(ZoneInfo(time_zone)).date()
 
     # Check for DailyPrompt with matching DailyPrompt.date and get the corresponding prompt_id
-    prompt_id = DailyPrompt.select().where(DailyPrompt.date == date.today()).first()
+    prompt_id = DailyPrompt.select().where(DailyPrompt.date == today).first()
     prompt = Prompt.get_by_id(prompt_id.prompt_id) if prompt_id else None
 
-    # If no DailyPrompt, get a random prompt from the database that the user has not responded to yet
+    # If no DailyPrompt, get the most recent 5 prompts that the user has not responded to
     if not prompt:
         user_responses = Entry.select(Entry.prompt_id).where(Entry.user == user_id)
-        prompt = Prompt.select().where(Prompt.id.not_in(user_responses)).order_by(db.random()).first()
-        DailyPrompt.create(date=date.today(), prompt_id=prompt.id) if prompt else None
+        prompts = (
+            Prompt.select()
+            .where(Prompt.id.not_in(user_responses))
+            .order_by(Prompt.id.desc())
+            .limit(5)
+        )
+        prompt = random.choice(prompts) if prompts else None
+        DailyPrompt.create(date=today, prompt_id=prompt.id) if prompt else None
 
     # If all prompts have been responded to, just pick a random prompt
     if not prompt:
         prompt = Prompt.select().order_by(db.random()).first()
-        DailyPrompt.create(date=date.today(), prompt_id=prompt.id) if prompt else None
+        DailyPrompt.create(date=today, prompt_id=prompt.id) if prompt else None
 
     # If still no prompt, just give up
     if not prompt:
@@ -108,32 +176,52 @@ async def daily_prompt(context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # Mark this user as "awaiting a response" — no ConversationHandler needed
-    context.application.bot_data.setdefault('awaiting_response', {})[user_id] = prompt.id
+    # Set UserCurrentPrompt for this user
+    current_prompt = UserCurrentPrompt.get_or_none(UserCurrentPrompt.user == user_id)
+    if current_prompt:
+        current_prompt.prompt_id = prompt.id
+        current_prompt.save()
+    else:
+        UserCurrentPrompt.create(user=user_id, prompt_id=prompt.id)
 
+    # Send daily prompt to the user
     await context.bot.send_message(
         chat_id=chat_id, 
-        text=f"Here's your daily songwriting prompt:\n\n{prompt.text}"
+        text=f"Here's your songwriting prompt:\n\n{prompt.text}"
     )
 
 
 async def handle_response(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    awaiting = context.application.bot_data.get('awaiting_response', {})
+    current_prompt = UserCurrentPrompt.get_or_none(UserCurrentPrompt.user == user_id)
+    prompt_id = None
 
-    if user_id not in awaiting:
+    # Handle the case where the user is replying to a prompt message
+    if update.message.reply_to_message and update.message.reply_to_message.text.startswith("Here's your songwriting prompt:"):
+        # User is replying to a prompt message, extract the prompt text
+        prompt_text = update.message.reply_to_message.text.split("\n\n", 1)[1]
+        prompt = Prompt.get_or_none(Prompt.text == prompt_text)
+        if prompt:
+            prompt_id = prompt.id
+
+    # If the user is not replying to a prompt message, use the current prompt from the database
+    if not prompt_id and current_prompt:
+        prompt_id = current_prompt.prompt_id
+
+    # If there's still no prompt_id, inform the user that they don't have a prompt to respond to
+    if not prompt_id:
         await update.message.reply_text("You don't have a prompt to respond to right now. Please wait for your daily prompt or use /help for more options.")
         return
-
-    prompt_id = awaiting.pop(user_id)
-    user_response = update.message.text
 
     # Save the user's response to the database
     Entry.create(
         user=User.get(User.chat_id == str(update.effective_chat.id)).id,
         prompt_id=prompt_id,
-        response=user_response
+        response=update.message.text
     )
+
+    # Remove UserCurrentPrompt for this user since they have responded
+    current_prompt.delete_instance()
 
     await update.message.reply_text("Thank you for your response! Your entry has been saved.")
 
@@ -230,7 +318,7 @@ async def get_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Subscription process canceled. You can start again anytime by sending /start.")
+    await update.message.reply_text("Canceled. Use /help to see available commands.")
     return ConversationHandler.END
 
 
@@ -282,7 +370,7 @@ def main():
 
     # Initialize the database and create tables if they don't exist
     db.connect()
-    db.create_tables([User, Prompt, Entry, DailyPrompt], safe=True)
+    db.create_tables([User, Prompt, UserCurrentPrompt, Entry, DailyPrompt], safe=True)
 
     # Load prompts from prompts.json (list) and save them to the database if they don't already exist
     with open('prompts.json', 'r') as f:
@@ -299,6 +387,24 @@ def main():
             EMAIL: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_email)],
             TZ: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_timezone)],
             TIME: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_time)],
+        },
+        fallbacks=[CommandHandler("cancel", cancel)],
+    )
+
+    # Conversation handler for the /suggest command
+    suggest_handler = ConversationHandler(
+        entry_points=[CommandHandler("suggest", suggest)],
+        states={
+            SUGGESTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_suggestion)],
+        },
+        fallbacks=[CommandHandler("cancel", cancel)],
+    )
+
+    # Conversation handler for the /review command
+    review_handler = ConversationHandler(
+        entry_points=[CommandHandler("review", review)],
+        states={
+            REVIEW: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_review)],
         },
         fallbacks=[CommandHandler("cancel", cancel)],
     )
@@ -320,6 +426,8 @@ def main():
     # Add conversation, message, and command handlers to the application
     app.add_handlers([
         start_handler,
+        suggest_handler,
+        review_handler,
         MessageHandler(filters.TEXT & ~filters.COMMAND, handle_response),
         CommandHandler("prompt", prompt),
         CommandHandler("list", list),

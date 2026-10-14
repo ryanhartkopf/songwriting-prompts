@@ -2,7 +2,7 @@
 from conftest import reply_text
 
 import main
-from classes import Entry
+from classes import Entry, UserCurrentPrompt
 
 
 async def test_help_lists_commands(make_update, context):
@@ -17,7 +17,7 @@ async def test_cancel_ends_conversation(make_update, context):
     from telegram.ext import ConversationHandler
     update = make_update()
     assert await main.cancel(update, context) == ConversationHandler.END
-    assert "canceled" in reply_text(update)
+    assert "Canceled" in reply_text(update)
 
 
 async def test_list_with_no_entries(make_update, context, make_user):
@@ -60,21 +60,6 @@ async def test_list_excludes_other_users(make_update, context, make_user, make_p
     assert "mine" in text and "theirs" not in text
 
 
-async def test_prompt_marks_user_as_awaiting(make_update, context, make_user, make_prompt):
-    user, prompt = make_user(user_id="1"), make_prompt("Write about rain.")
-    update = make_update(user_id=1)
-    await main.prompt(update, context)
-    text = reply_text(update)
-    assert "Write about rain." in text
-
-
-async def test_prompt_marks_user_as_awaiting(make_update, context, make_user, make_prompt):
-    user, prompt = make_user(user_id="1"), make_prompt("Write about rain.")
-    update = make_update(user_id=1)
-    await main.prompt(update, context)
-    assert context.application.bot_data["awaiting_response"][1] == prompt.id
-
-
 async def test_prompt_prefers_prompts_user_has_not_answered(make_update, context, make_user, make_prompt):
     user = make_user(user_id="1")
     answered, fresh = make_prompt("answered"), make_prompt("fresh")
@@ -82,7 +67,7 @@ async def test_prompt_prefers_prompts_user_has_not_answered(make_update, context
     update = make_update(user_id=1)
     for _ in range(20):  # random selection, so repeat
         await main.prompt(update, context)
-        assert context.application.bot_data["awaiting_response"][1] == fresh.id
+        assert UserCurrentPrompt.get(user=user).prompt_id == fresh
 
 
 async def test_prompt_handles_empty_prompt_table(make_update, context, make_user):

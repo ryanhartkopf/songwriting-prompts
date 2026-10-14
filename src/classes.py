@@ -44,3 +44,8 @@ class Entry(BaseModel):
 class DailyPrompt(BaseModel):
     date = DateField(default=date.today, index=True)
     prompt_id = ForeignKeyField(Prompt, backref='daily_prompts')
+
+
+class UserCurrentPrompt(BaseModel):
+    user = ForeignKeyField(User, backref='current_prompt', unique=True)
+    prompt_id = ForeignKeyField(Prompt, backref='current_prompt')
