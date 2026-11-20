@@ -221,7 +221,8 @@ async def handle_response(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
     # Remove UserCurrentPrompt for this user since they have responded
-    current_prompt.delete_instance()
+    if current_prompt:
+        current_prompt.delete_instance()
 
     await update.message.reply_text("Thank you for your response! Your entry has been saved.")
 
